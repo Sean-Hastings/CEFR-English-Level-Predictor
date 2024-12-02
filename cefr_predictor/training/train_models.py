@@ -1,3 +1,14 @@
+from __future__ import annotations
+import os
+import sys
+import numpy as np
+from sklearn.model_selection import train_test_split, StratifiedKFold
+
+module_path = os.path.abspath(os.path.join("."))
+if module_path not in sys.path:
+    sys.path.append(module_path)
+
+
 import pandas as pd
 from joblib import dump
 from xgboost import XGBClassifier
@@ -8,17 +19,37 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler, FunctionTransformer
 from cefr_predictor.preprocessing import generate_features
 
-RANDOM_SEED = 0
+RANDOM_SEED = 1
 
 label_encoder = None
 
 
 def train(model):
+    global X_train, X_test, y_train, y_test
+    scores = []
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
     print(f"Training {model['name']}.")
-    pipeline = build_pipeline(model["model"])
-    pipeline.fit(X_train, y_train)
-    print(pipeline.score(X_test, y_test))
-    save_model(pipeline, model["name"])
+
+    for i, (i_train, i_test) in enumerate(skf.split(X, Y)):
+        X_train, X_test = X[i_train], X[i_test]
+        y_train, y_test = Y[i_train], Y[i_test]
+        pipeline = build_pipeline(model["model"])
+        pipeline.fit(X_train, y_train)
+        score = pipeline.score(X_test, y_test)
+        scores.append(score)
+        print(f"Fold {i}: {score}")
+    
+    print(f"Average score: {sum(scores) / len(scores)}")
+
+    # X_train, X_test, y_train, y_test = train_test_split(
+    #     X, Y, test_size=0.2, random_state=RANDOM_SEED, stratify=Y
+    # )
+
+    # print(f"Training {model['name']}.")
+    # pipeline = build_pipeline(model["model"])
+    # pipeline.fit(X_train, y_train)
+    # print(pipeline.score(X_test, y_test)) # TODO: use this to calc accuracy in dist_compare. It will have to be a new entry in the data_dict within the helper function that is then accessed from outside like the others
+    # save_model(pipeline, model["name"])
 
 
 def build_pipeline(model):
@@ -64,21 +95,29 @@ models = [
             use_label_encoder=False,
         ),
     },
-    {
-        "name": "Logistic Regression",
-        "model": LogisticRegression(random_state=RANDOM_SEED),
-    },
-    {
-        "name": "Random Forest",
-        "model": RandomForestClassifier(random_state=RANDOM_SEED),
-    },
-    {"name": "SVC", "model": SVC(random_state=RANDOM_SEED, probability=True)},
+    # {
+    #     "name": "Logistic Regression",
+    #     "model": LogisticRegression(random_state=RANDOM_SEED),
+    # },
+    # {
+    #     "name": "Random Forest",
+    #     "model": RandomForestClassifier(random_state=RANDOM_SEED),
+    # },
+    # {"name": "SVC", "model": SVC(random_state=RANDOM_SEED, probability=True)},
 ]
 
-X_train, y_train = load_data("data/train.csv")
-X_test, y_test = load_data("data/test.csv")
+X, Y = load_data("data/cefr_leveled_texts.csv")
+X = np.array(X)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, Y, test_size=0.2, random_state=RANDOM_SEED, stratify=Y
+)
+
+# X_train, y_train = load_data("data/train.csv")
+# X_test, y_test = load_data("data/test.csv")
 
 
 if __name__ == "__main__":
     for model in models:
-        train(model)
+        for RANDOM_SEED in range(10):
+            print(f"RANDOM SEED: {RANDOM_SEED}")
+            train(model)
